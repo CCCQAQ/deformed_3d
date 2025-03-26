@@ -1,0 +1,11 @@
+python demo.py \
+    --data_path /public/home/xiandaifuwuye/601182/4d_reconstruction/our4d/data/car/input_img \
+    --task img2trajvid_s-prob \
+    --replace_or_include_input True \
+    --traj_prior orbit \
+    --cfg 4.0,2.0 \
+    --guider 1,2 \
+    --num_targets 111 \
+    --L_long 512 \
+    --use_traj_prior True \
+    --chunk_strategy interp
