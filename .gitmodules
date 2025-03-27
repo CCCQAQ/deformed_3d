@@ -1,0 +1,9 @@
+[submodule "submodules/depth-diff-gaussian-rasterization"]
+	path = submodules/depth-diff-gaussian-rasterization
+	url = https://github.com/ingra14m/diff-gaussian-rasterization-extentions.git
+[submodule "submodules/simple-knn"]
+	path = submodules/simple-knn
+	url = https://gitlab.inria.fr/bkerbl/simple-knn.git
+[submodule "stable-virtual-camera/third_party/dust3r"]
+	path = stable-virtual-camera/third_party/dust3r
+	url = https://github.com/jensenstability/dust3r

@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "seva"
 version = "0.0.0"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "roma",
     "viser",
     "tyro",
     "fire",
     "ninja",
-    "gradio==5.17.0",
+    "gradio",
     "einops",
     "colorama",
     "splines",

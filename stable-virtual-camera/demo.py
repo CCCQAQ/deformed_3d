@@ -126,30 +126,30 @@ def parse_task(
         anchor_Ks = Ks[[round(ind) for ind in anchor_indices]]
 
         #### save dust3r ply #####
-        img_paths = [scene]
-        (
-            input_imgs,
-            input_Ks,
-            input_c2ws,
-            points,
-            point_colors,
-        ) = DUST3R.infer_cameras_and_points(img_paths)
-        points=points[0]
-        point_colors=point_colors[0]
+        # img_paths = [scene]
+        # (
+        #     input_imgs,
+        #     input_Ks,
+        #     input_c2ws,
+        #     points,
+        #     point_colors,
+        # ) = DUST3R.infer_cameras_and_points(img_paths)
+        # points=points[0]
+        # point_colors=point_colors[0]
 
-        if point_colors.max() > 1.0:
-            point_colors = point_colors / 255.0
+        # if point_colors.max() > 1.0:
+        #     point_colors = point_colors / 255.0
 
-        # 坐标系变换（与c2ws变换一致）
-        transform_matrix = np.diag([1, -1, -1])  # 翻转Y和Z轴
-        points = points @ transform_matrix
+        # # 坐标系变换（与c2ws变换一致）
+        # transform_matrix = np.diag([1, -1, -1])  # 翻转Y和Z轴
+        # points = points @ transform_matrix
 
-        # 创建点云对象
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(point_colors)
+        # # 创建点云对象
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)
+        # pcd.colors = o3d.utility.Vector3dVector(point_colors)
 
-        o3d.io.write_point_cloud(os.path.join(save_path,"pcd_single.ply"), pcd)
+        # o3d.io.write_point_cloud(os.path.join(save_path,"pcd_single.ply"), pcd)
 
     else:
         parser = get_parser(
@@ -437,63 +437,66 @@ def main(
             ),
             c2ws=c2ws,
             Ks=Ks,
-            save_name="transforms_single.json"
-        )
-
-
-        ###### save dust3r ply #####
-        (
-            input_imgs,
-            input_Ks,
-            input_c2ws,
-            points,
-            point_colors,
-        ) = DUST3R.infer_cameras_and_points(img_paths)
-
-        ## concat all points and colors, points is list, colors is list
-        points=np.concatenate([p for p in points]) # shape: (N,3)
-        point_colors=np.concatenate([c for c in point_colors]) # shape: (N,3)
-
-        if point_colors.max() > 1.0:
-            point_colors = point_colors / 255.0
-
-        # 坐标系变换（与c2ws变换一致）
-        transform_matrix = np.diag([1, -1, -1])  # 翻转Y和Z轴
-        points = points @ transform_matrix
-
-        # 创建点云对象
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(point_colors)
-
-        o3d.io.write_point_cloud(os.path.join(save_path_scene,"pcd.ply"), pcd)
-
-        input_c2ws = input_c2ws @ torch.tensor(np.diag([1, -1, -1, 1])).float()
-        img_paths = sorted(glob.glob(osp.join(save_path_scene, "samples-rgb", "*.png")))
-        if len(img_paths) != len(c2ws):
-            input_img_paths = sorted(
-                glob.glob(osp.join(save_path_scene, "input", "*.png"))
-            )
-            assert len(img_paths) == num_targets
-            assert len(input_img_paths) == num_inputs
-            assert c2ws.shape[0] == num_inputs + num_targets
-            target_indices = [i for i in range(c2ws.shape[0]) if i not in input_indices]
-            img_paths = [
-                input_img_paths[input_indices.index(i)]
-                if i in input_indices
-                else img_paths[target_indices.index(i)]
-                for i in range(c2ws.shape[0])
-            ]
-        create_transforms_simple(
-            save_path=save_path_scene,
-            img_paths=img_paths,
-            img_whs=np.array([VERSION_DICT["W"], VERSION_DICT["H"]])[None].repeat(
-                num_inputs + num_targets, 0
-            ),
-            c2ws=input_c2ws,
-            Ks=input_Ks,
             save_name="transforms.json"
         )
+
+
+        # ###### save dust3r ply #####
+        # (
+        #     input_imgs,
+        #     input_Ks,
+        #     input_c2ws,
+        #     points,
+        #     point_colors,
+        # ) = DUST3R.infer_cameras_and_points(img_paths)
+
+        # ## concat all points and colors, points is list, colors is list
+        # points=np.concatenate([p for p in points]) # shape: (N,3)
+        # point_colors=np.concatenate([c for c in point_colors]) # shape: (N,3)
+
+        # if point_colors.max() > 1.0:
+        #     point_colors = point_colors / 255.0
+
+        # # 坐标系变换（与c2ws变换一致）
+        # transform_matrix = np.diag([1, -1, -1])  # 翻转Y和Z轴
+        # points = points @ transform_matrix
+
+        # # 创建点云对象
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)
+        # pcd.colors = o3d.utility.Vector3dVector(point_colors)
+
+        # o3d.io.write_point_cloud(os.path.join(save_path_scene,"pcd.ply"), pcd)
+
+        # input_c2ws=torch.from_numpy(input_c2ws).float() # shape: (N,4,4)
+        # input_Ks=torch.from_numpy(input_Ks).float() # shape: (N,3,3)
+
+        # input_c2ws = input_c2ws @ torch.tensor(np.diag([1, -1, -1, 1])).float()
+        # img_paths = sorted(glob.glob(osp.join(save_path_scene, "samples-rgb", "*.png")))
+        # if len(img_paths) != len(c2ws):
+        #     input_img_paths = sorted(
+        #         glob.glob(osp.join(save_path_scene, "input", "*.png"))
+        #     )
+        #     assert len(img_paths) == num_targets
+        #     assert len(input_img_paths) == num_inputs
+        #     assert c2ws.shape[0] == num_inputs + num_targets
+        #     target_indices = [i for i in range(c2ws.shape[0]) if i not in input_indices]
+        #     img_paths = [
+        #         input_img_paths[input_indices.index(i)]
+        #         if i in input_indices
+        #         else img_paths[target_indices.index(i)]
+        #         for i in range(c2ws.shape[0])
+        #     ]
+        # create_transforms_simple(
+        #     save_path=save_path_scene,
+        #     img_paths=img_paths,
+        #     img_whs=np.array([VERSION_DICT["W"], VERSION_DICT["H"]])[None].repeat(
+        #         num_inputs + num_targets, 0
+        #     ),
+        #     c2ws=input_c2ws,
+        #     Ks=input_Ks,
+        #     save_name="transforms.json"
+        # )
 
 
 if __name__ == "__main__":

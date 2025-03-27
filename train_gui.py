@@ -545,8 +545,14 @@ class GUI:
             self.gaussians.oneupSHdegree()
 
         # Pick a random Camera
-        if not self.viewpoint_stack:
-            self.viewpoint_stack = self.scene.getTrainCameras().copy()
+        # if not self.viewpoint_stack:
+        #     self.viewpoint_stack = self.scene.getTrainCameras().copy()
+        if self.iteration < self.opt.warm_up:
+            if not self.viewpoint_stack:
+                self.viewpoint_stack = self.scene.getTrainSpatialCameras().copy()
+        else:
+            if not self.viewpoint_stack or self.iteration == self.opt.warm_up:
+                self.viewpoint_stack = self.scene.getTrainTemporalCameras().copy()
 
         total_frame = len(self.viewpoint_stack)
         time_interval = 1 / total_frame

@@ -114,7 +114,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         
 
 
-        if iteration < 10:
+        if iteration % 500 == 0:
             ####save gt and rendered image ####
             gt_img_vis = gt_image.permute(1, 2, 0).detach().cpu().numpy()
             gt_img_vis = np.clip(gt_img_vis, 0, 1)
@@ -151,7 +151,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                                                                  radii[visibility_filter])
 
             # Log and save
-            cur_psnr = training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
+            cur_psnr = training_report(opt, tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
                                        testing_iterations, scene, render, (pipe, background), deform,
                                        dataset.load2gpu_on_the_fly, dataset.is_6dof)
             if iteration in testing_iterations:
@@ -212,7 +212,7 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene: Scene, renderFunc,
+def training_report(opt, tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene: Scene, renderFunc,
                     renderArgs, deform, load2gpu_on_the_fly, is_6dof=False):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
@@ -223,10 +223,18 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()},
-                              {'name': 'train',
-                               'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in
-                                           range(5, 30, 5)]})
+        # validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()},
+        #                       {'name': 'train',
+        #                        'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in
+        #                                    range(5, 30, 5)]})
+        if iteration < opt.warm_up:
+            validation_configs = [ {'name': 'train',
+                               'cameras': [scene.getTrainSpatialCameras()[idx % len(scene.getTrainSpatialCameras())] for idx in
+                                           range(5, 30, 15)]}]
+        else:
+            validation_configs = [ {'name': 'train',
+                                   'cameras': [scene.getTrainTemporalCameras()[idx % len(scene.getTrainTemporalCameras())] for idx in
+                                               range(5, 30, 15)]}]
 
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
@@ -257,8 +265,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
                 l1_test = l1_loss(images, gts)
                 psnr_test = psnr(images, gts).mean()
-                if config['name'] == 'test' or len(validation_configs[0]['cameras']) == 0:
-                    test_psnr = psnr_test
+                # if config['name'] == 'test' or len(validation_configs[0]['cameras']) == 0:
+                    # test_psnr = psnr_test
+                test_psnr = psnr_test
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)

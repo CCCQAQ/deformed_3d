@@ -322,10 +322,14 @@ def readCamerasFromOpenglTransforms(path, temporal_data_path_list, transformsfil
         fovx = focal2fov(frame['fl_x'],frame['w'])
         fovy = focal2fov(frame['fl_y'],frame['h'])
         time = 0
-        matrix = np.linalg.inv(np.vstack([np.array(frame["transform_matrix"]),[0,0,0,1]]))
-        R = -np.transpose(matrix[:3,:3])
-        R[:,0] = -R[:,0]
-        T = -matrix[:3, 3]
+        c2w = np.vstack([np.array(frame["transform_matrix"]),[0,0,0,1]])
+        matrix = np.linalg.inv(np.array(c2w))
+        R = np.transpose(matrix[:3, :3])
+        T = matrix[:3, 3]
+        # matrix = np.linalg.inv(np.vstack([np.array(frame["transform_matrix"]),[0,0,0,1]]))
+        # R = -np.transpose(matrix[:3,:3])
+        # R[:,0] = -R[:,0]
+        # T = -matrix[:3, 3]
         image_path = os.path.join(path, frame["file_path"])
         image_name = Path(image_path).stem # 0.png
         image = Image.open(image_path)
@@ -341,7 +345,7 @@ def readCamerasFromOpenglTransforms(path, temporal_data_path_list, transformsfil
                 temporal_time = int(temporal_data_name.split(".")[0])/max_time
                 print("temporal_time",temporal_time)
 
-                cam_temporal_infos.append(CameraInfo(uid=len(contents["frames"])+temporal_idx, R=R, T=T, FovY=FovY, FovX=FovX, image=temporal_image,
+                cam_temporal_infos.append(CameraInfo(uid=temporal_idx, R=R, T=T, FovY=FovY, FovX=FovX, image=temporal_image,
                             image_path=temporal_data_path, image_name=temporal_data_name, width=temporal_image.size[0], height=temporal_image.size[1],
                             fid = temporal_time))
         
@@ -359,13 +363,13 @@ def readStableCameraInfos(path):
     print("Reading Training Transforms")
     # train_cam_infos = readCamerasFromOpenglTransforms(path,temporal_data_paths_list, "transforms.json", max_time)
     # train_spatial_cam_infos, train_temporal_cam_infos = readCamerasFromOpenglTransforms(path,temporal_data_paths_list, "transforms.json", max_time)
-    train_spatial_cam_infos, train_temporal_cam_infos = readCamerasFromOpenglTransforms(path,temporal_data_paths_list, "transforms_single.json", max_time)
+    train_spatial_cam_infos, train_temporal_cam_infos = readCamerasFromOpenglTransforms(path,temporal_data_paths_list, "vggt_transforms.json", max_time)
     test_cam_infos=[]
     train_cam_infos = train_spatial_cam_infos + train_temporal_cam_infos
 
     nerf_normalization = getNerfppNorm(train_spatial_cam_infos)
     # ply_path = os.path.join(path, "pcd.ply")
-    ply_path = os.path.join(path, "pcd_single.ply")
+    ply_path = os.path.join(path, "vggt_pcd.ply")
     if not os.path.exists(ply_path):
         num_pts = 100_000
         print(f"Generating random point cloud ({num_pts})...")

@@ -1,5 +1,5 @@
 python demo.py \
-    --data_path /public/home/xiandaifuwuye/601182/4d_reconstruction/our4d/data/car/input_img \
+    --data_path ../data/car/input_img \
     --task img2trajvid_s-prob \
     --replace_or_include_input True \
     --traj_prior orbit \
