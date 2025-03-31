@@ -1,9 +1,16 @@
 [submodule "submodules/depth-diff-gaussian-rasterization"]
 	path = submodules/depth-diff-gaussian-rasterization
-	url = https://github.com/ingra14m/diff-gaussian-rasterization-extentions.git
+	url = https://github.com/ingra14m/diff-gaussian-rasterization-extentions
+	branch = filter-norm
 [submodule "submodules/simple-knn"]
 	path = submodules/simple-knn
 	url = https://gitlab.inria.fr/bkerbl/simple-knn.git
 [submodule "stable-virtual-camera/third_party/dust3r"]
 	path = stable-virtual-camera/third_party/dust3r
 	url = https://github.com/jensenstability/dust3r
+[submodule "viewer"]
+	path = viewer
+	url = https://github.com/yzslab/gaussian-splatting-lightning.git
+[submodule "stable-virtual-camera/third_party/vggt"]
+	path = stable-virtual-camera/third_party/vggt
+	url = https://github.com/facebookresearch/vggt.git
