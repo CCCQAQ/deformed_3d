@@ -10,3 +10,10 @@
 [submodule "stable-virtual-camera/third_party/vggt"]
 	path = stable-virtual-camera/third_party/vggt
 	url = https://github.com/facebookresearch/vggt.git
+[submodule "submodules/depth-diff-gaussian-rasterization"]
+	path = submodules/depth-diff-gaussian-rasterization
+	url = https://github.com/ingra14m/diff-gaussian-rasterization-extentions
+	branch = filter-norm
+[submodule "submodules/diff-surfel-rasterization"]
+	path = submodules/diff-surfel-rasterization
+	url = https://github.com/hbb1/diff-surfel-rasterization.git

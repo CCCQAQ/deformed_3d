@@ -42,9 +42,17 @@ class DeformModel:
         weights_path = os.path.join(model_path, "deform/iteration_{}/deform.pth".format(loaded_iter))
         self.deform.load_state_dict(torch.load(weights_path))
 
-    def update_learning_rate(self, iteration):
+    def update_learning_rate(self, iteration, warm_up):
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "deform":
-                lr = self.deform_scheduler_args(iteration)
+                lr = self.deform_scheduler_args(iteration-warm_up)
                 param_group['lr'] = lr
-                return lr
+    
+        # if iteration < warm_up:
+        #     for param_group in self.optimizer.param_groups:
+        #         param_group['lr'] = 0.0
+        # else:
+        #     for param_group in self.optimizer.param_groups:
+        #         if param_group["name"] == "deform":
+        #             lr = self.deform_scheduler_args(iteration-warm_up)
+        #             param_group['lr'] = lr

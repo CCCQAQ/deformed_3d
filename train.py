@@ -13,7 +13,7 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim, kl_divergence
-from gaussian_renderer import render, network_gui
+from gaussian_renderer import render, network_gui, render_flow
 import sys
 from scene import Scene, GaussianModel, DeformModel
 from utils.general_utils import safe_state, get_linear_noise_func
@@ -32,18 +32,22 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+from torchmetrics import PearsonCorrCoef
+import scipy
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     deform = DeformModel(dataset.is_blender, dataset.is_6dof)
-    deform.train_setting(opt)
+    # deform.train_setting(opt)
 
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    pearson=PearsonCorrCoef().to("cuda", non_blocking=True)
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
@@ -53,7 +57,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     best_psnr = 0.0
     best_iteration = 0
     progress_bar = tqdm(range(opt.iterations), desc="Training progress")
-    smooth_term = get_linear_noise_func(lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000)
+    smooth_term = get_linear_noise_func(lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000-opt.warm_up)
+
+
+    viewpoint_cam_prev = None
     for iteration in range(1, opt.iterations + 1):
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -76,6 +83,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
+        
+        if iteration == opt.warm_up:
+            deform.train_setting(opt)
 
         if iteration < opt.warm_up:
             # pick a random spatial camera
@@ -88,7 +98,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             total_frame = len(viewpoint_stack)
             time_interval = 1 / total_frame
-
+        
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
         if dataset.load2gpu_on_the_fly:
             viewpoint_cam.load2device()
@@ -100,19 +110,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             N = gaussians.get_xyz.shape[0]
             time_input = fid.unsqueeze(0).expand(N, -1)
 
-            ast_noise = 0 if dataset.is_blender else torch.randn(1, 1, device='cuda').expand(N, -1) * time_interval * smooth_term(iteration)
+            ast_noise = 0 if dataset.is_blender else torch.randn(1, 1, device='cuda').expand(N, -1) * time_interval * smooth_term(iteration-opt.warm_up)
             d_xyz, d_rotation, d_scaling = deform.step(gaussians.get_xyz.detach(), time_input + ast_noise)
 
         # Render
         render_pkg_re = render(viewpoint_cam, gaussians, pipe, background, d_xyz, d_rotation, d_scaling, dataset.is_6dof)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg_re["render"], render_pkg_re[
-            "viewspace_points"], render_pkg_re["visibility_filter"], render_pkg_re["radii"]
-        # depth = render_pkg_re["depth"]
+        image, viewspace_point_tensor, visibility_filter, radii, depth = render_pkg_re["render"], render_pkg_re[
+            "viewspace_points"], render_pkg_re["visibility_filter"], render_pkg_re["radii"], render_pkg_re["depth"]
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
-        
-
+        if viewpoint_cam.depth is not None:
+            gt_depth = viewpoint_cam.depth.cuda()
 
         if iteration % 500 == 0:
             ####save gt and rendered image ####
@@ -130,6 +139,34 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #####################################
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+
+        ## depth loss
+        if viewpoint_cam.depth is not None:
+            depth = torch.nan_to_num(depth)
+            # median_depth = torch.median(depth)
+            # depth = (depth - median_depth) / torch.abs(depth - median_depth+1e-6).mean()
+
+            # depth_loss = (1. - pearson(depth.flatten(), gt_depth.flatten()))
+            depth_loss = torch.abs(depth-gt_depth).mean()
+            loss += opt.lambda_depth * depth_loss
+        
+        #### add flow loss#########
+        if viewpoint_cam_prev is not None:
+            if iteration <= opt.warm_up:
+                d_xyz_prev, d_rotation_prev, d_scaling_prev = 0.0, 0.0, 0.0
+            
+            else:
+                N = gaussians.get_xyz.shape[0]
+                time_input_prev = viewpoint_cam_prev.fid.unsqueeze(0).expand(N, -1)
+                ast_noise_prev = 0 if dataset.is_blender else torch.randn(1, 1, device='cuda').expand(N, -1) * time_interval * smooth_term(iteration-opt.warm_up-1)
+                d_xyz_prev, d_rotation_prev, d_scaling_prev = deform.step(gaussians.get_xyz.detach(), time_input_prev + ast_noise_prev)
+
+            render_pkg_re_flow = render_flow(viewpoint_cam, viewpoint_cam_prev, gaussians, pipe, background, d_xyz, d_rotation, d_scaling,
+                                      d_xyz_prev, d_rotation_prev, d_scaling_prev, dataset.is_6dof)
+
+        
+        
+        viewpoint_cam_prev = viewpoint_cam
         loss.backward()
 
         iter_end.record()
@@ -179,13 +216,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step()
-                gaussians.update_learning_rate(iteration)
-                deform.optimizer.step()
-                gaussians.optimizer.zero_grad(set_to_none=True)
-                deform.optimizer.zero_grad()
-                deform.update_learning_rate(iteration)
-
+                if iteration < opt.warm_up:
+                    gaussians.optimizer.step()
+                    gaussians.update_learning_rate(iteration, opt.warm_up)
+                    gaussians.optimizer.zero_grad(set_to_none=True)
+                else:
+                    deform.optimizer.step()
+                    deform.update_learning_rate(iteration, opt.warm_up)
+                    deform.optimizer.zero_grad()
+            
+            # if iteration < opt.iterations:
+            #     gaussians.optimizer.step()
+            #     gaussians.update_learning_rate(iteration, opt.warm_up)
+            #     deform.optimizer.step()
+            #     gaussians.optimizer.zero_grad(set_to_none=True)
+            #     deform.optimizer.zero_grad()
+            #     deform.update_learning_rate(iteration, opt.warm_up)
+            
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
 

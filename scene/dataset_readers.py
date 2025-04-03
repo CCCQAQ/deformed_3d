@@ -27,6 +27,9 @@ from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 from utils.camera_utils import camera_nerfies_from_JSON
 
+from transformers import pipeline
+
+import scipy
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -316,6 +319,7 @@ def readCamerasFromOpenglTransforms(path, temporal_data_path_list, transformsfil
     # cam_infos = []
     cam_spatial_infos = []
     cam_temporal_infos = []
+    # depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-large-hf")
     with open(os.path.join(path, transformsfile)) as json_file:
         contents = json.load(json_file)
     for idx, frame in enumerate(contents["frames"]):
@@ -334,6 +338,16 @@ def readCamerasFromOpenglTransforms(path, temporal_data_path_list, transformsfil
         image_name = Path(image_path).stem # 0.png
         image = Image.open(image_path)
 
+        depth = None
+        try:
+            if frame["depth_file_path"] is not None:
+                depth_path = os.path.join(path, frame["depth_file_path"])
+                depth = np.load(depth_path)
+                # median_depth = np.median(depth)
+                # depth = (depth - median_depth) / np.abs(depth - median_depth+1e-6).mean()
+        except:
+            print("No depth file found for", image_path)
+
         FovY = fovy 
         FovX = fovx
 
@@ -344,14 +358,33 @@ def readCamerasFromOpenglTransforms(path, temporal_data_path_list, transformsfil
                 temporal_image = temporal_image.resize((frame['w'],frame['h']))
                 temporal_time = int(temporal_data_name.split(".")[0])/max_time
                 print("temporal_time",temporal_time)
+                temporal_depth = None
+                # if frame["depth_file_path"] is not None:
+                #     temporal_depth_path =  temporal_data_path.replace("/temporal/","/temporal_depth/")
+                #     temporal_depth_root_path = os.path.dirname(temporal_depth_path)
+                #     if not os.path.exists(temporal_depth_root_path):
+                #         os.makedirs(temporal_depth_root_path)
+                #     if os.path.exists(temporal_depth_path):
+                #         temporal_depth = Image.open(temporal_depth_path)
+                #         temporal_depth = temporal_depth.resize([frame['w'],frame['h']],Image.Resampling.NEAREST)
+                #     else:
+                #         raw_depth = depth_pipe(temporal_image)["depth"] # [H,W] tensor
+                #         temporal_depth = raw_depth.resize([frame['w'],frame['h']],Image.Resampling.NEAREST)
+                #         temporal_depth = np.array(temporal_depth)
+                #         temporal_depth = scipy.ndimage.median_filter(temporal_depth, size=(temporal_depth.shape[0]//64, temporal_depth.shape[1]//64))
+                #         Image.fromarray(np.uint8(temporal_depth)).save(temporal_depth_path)
+
+                #     temporal_depth = 1 / np.maximum(temporal_depth, 1e-2)
+                #     median_depth = np.median(temporal_depth)
+                #     temporal_depth = (temporal_depth - median_depth) / np.abs(temporal_depth - median_depth).mean()
 
                 cam_temporal_infos.append(CameraInfo(uid=temporal_idx, R=R, T=T, FovY=FovY, FovX=FovX, image=temporal_image,
                             image_path=temporal_data_path, image_name=temporal_data_name, width=temporal_image.size[0], height=temporal_image.size[1],
-                            fid = temporal_time))
+                            fid = temporal_time, depth=temporal_depth))
         
         cam_spatial_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=image.size[0], height=image.size[1],
-                            fid = time))
+                            fid = time, depth=depth))
 
     return cam_spatial_infos, cam_temporal_infos
 
@@ -370,6 +403,7 @@ def readStableCameraInfos(path):
     nerf_normalization = getNerfppNorm(train_spatial_cam_infos)
     # ply_path = os.path.join(path, "pcd.ply")
     ply_path = os.path.join(path, "vggt_pcd.ply")
+    # ply_path = os.path.join(path, "vggt_pcd_downsample.ply")
     if not os.path.exists(ply_path):
         num_pts = 100_000
         print(f"Generating random point cloud ({num_pts})...")

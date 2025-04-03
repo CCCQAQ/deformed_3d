@@ -131,13 +131,22 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
 
-    def update_learning_rate(self, iteration):
+    def update_learning_rate(self, iteration, warm_up):
         ''' Learning rate scheduling per step '''
-        for param_group in self.optimizer.param_groups:
-            if param_group["name"] == "xyz":
-                lr = self.xyz_scheduler_args(iteration)
-                param_group['lr'] = lr
-                return lr
+        if iteration < warm_up:
+            for param_group in self.optimizer.param_groups:
+                if param_group["name"] == "xyz":
+                    lr = self.xyz_scheduler_args(iteration)
+                    param_group['lr'] = lr
+        
+        if iteration+1 == warm_up:
+            for param_group in self.optimizer.param_groups:
+                for param in param_group['params']:
+                    param.requires_grad = False
+        # else:
+        #     for param_group in self.optimizer.param_groups:
+        #         param_group['lr'] = 0.0
+        
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']

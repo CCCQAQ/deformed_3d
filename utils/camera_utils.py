@@ -14,7 +14,7 @@ import numpy as np
 from utils.general_utils import PILtoTorch, ArrayToTorch
 from utils.graphics_utils import fov2focal
 import json
-
+import torch
 WARNED = False
 
 
@@ -43,7 +43,19 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
 
+    if cam_info.depth is not None:
+        resized_depth_rgb = np.resize(cam_info.depth, (resolution[1],resolution[0]))
+        resized_depth_rgb = torch.from_numpy(resized_depth_rgb)
+        resized_depth_rgb = resized_depth_rgb.unsqueeze(dim=-1).permute(2, 0, 1)
+    else:
+        resized_depth_rgb = None
+
     gt_image = resized_image_rgb[:3, ...]
+    if resized_depth_rgb is not None:
+        gt_depth = resized_depth_rgb[:1, ...]
+    else:
+        gt_depth = None
+
     loaded_mask = None
 
     if resized_image_rgb.shape[1] == 4:
@@ -54,7 +66,7 @@ def loadCam(args, id, cam_info, resolution_scale):
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id,
                   data_device=args.data_device if not args.load2gpu_on_the_fly else 'cpu', fid=cam_info.fid,
-                  depth=cam_info.depth)
+                  depth=gt_depth)
 
 
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):

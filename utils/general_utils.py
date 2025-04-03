@@ -186,3 +186,19 @@ def safe_state(silent):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
+
+def point_cloud_to_image(world_coordinates, viewpoint_camera):
+
+    means3D_homo = torch.cat([world_coordinates, torch.ones_like(world_coordinates[:, :1])], dim=1)
+    means_clip = (viewpoint_camera.full_proj_transform.T @ means3D_homo.T).T
+    depth = means_clip[:, 2]
+    means_screen = means_clip / means_clip[:, 3:]
+    x_normalized = means_screen[:, 0] * 0.5 + 0.5
+    y_normalized = means_screen[:, 1] * 0.5 + 0.5
+
+    x_pixel = x_normalized * int(viewpoint_camera.image_width)
+    y_pixel = y_normalized * int(viewpoint_camera.image_height)
+
+    coords = torch.stack([x_pixel, y_pixel], axis=1)
+
+    return coords, depth

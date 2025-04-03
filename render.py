@@ -43,7 +43,10 @@ def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views,
         fid = view.fid
         xyz = gaussians.get_xyz
         time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input)
+        if fid==0:
+            d_xyz, d_rotation, d_scaling = 0.0, 0.0, 0.0
+        else:
+            d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input)
         results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
         rendering = results["render"]
         depth = results["depth"]
@@ -72,6 +75,47 @@ def render_set(model_path, load2gpu_on_the_fly, is_6dof, name, iteration, views,
     t = np.array(t_list[5:])
     fps = 1.0 / t.mean()
     print(f'Test FPS: \033[1;35m{fps:.5f}\033[0m, Num. of GS: {xyz.shape[0]}')
+    
+def render_stable_camera_view(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views_spatial, gaussians, pipeline, background, deform):
+    render_path = os.path.join(model_path, name, "ours_stable_view_{}".format(iteration), "renders")
+    depth_path = os.path.join(model_path, name, "ours_stable_view_{}".format(iteration), "depth")
+
+    makedirs(render_path, exist_ok=True)
+    makedirs(depth_path, exist_ok=True)
+
+    to8b = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
+
+    frame = len(views_spatial)
+    renderings = []
+    renderings_static = []
+    for i in tqdm(range(frame), desc="Rendering progress"):
+        view = views_spatial[i]
+        xyz = gaussians.get_xyz
+        fid = torch.Tensor([i / (frame - 1)]).cuda()
+        time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
+        d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input)
+        results = render(view, gaussians, pipeline, background, d_xyz, d_rotation, d_scaling, is_6dof)
+        rendering = results["render"]
+        d_xyz_static, d_rotation_static, d_scaling_static = 0.0, 0.0, 0.0
+        results_static = render(view, gaussians, pipeline, background, d_xyz_static, d_rotation_static, d_scaling_static, is_6dof)
+        rendering_static = results_static["render"]
+        renderings.append(to8b(rendering.cpu().numpy()))
+        renderings_static.append(to8b(rendering_static.cpu().numpy()))
+        depth = results["depth"]
+        depth = depth / (depth.max() + 1e-5)
+
+        depth_static = results_static["depth"]
+        depth_static = depth_static / (depth_static.max()+1e-5)
+
+        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(i) + ".png"))
+        torchvision.utils.save_image(rendering_static, os.path.join(render_path, '{0:05d}_static'.format(i) + ".png"))
+        torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(i) + ".png"))
+        torchvision.utils.save_image(depth_static, os.path.join(depth_path, '{0:05d}_static'.format(i) + ".png"))
+
+    renderings = np.stack(renderings, 0).transpose(0, 2, 3, 1)
+    imageio.mimwrite(os.path.join(render_path, 'video.mp4'), renderings, fps=30, quality=8)
+    renderings_static = np.stack(renderings_static, 0).transpose(0, 2, 3, 1)
+    imageio.mimwrite(os.path.join(render_path, 'video_static.mp4'), renderings_static, fps=30, quality=8)
 
 
 def interpolate_time(model_path, load2gpt_on_the_fly, is_6dof, name, iteration, views, gaussians, pipeline, background, deform):
@@ -317,18 +361,30 @@ def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, 
             render_func = interpolate_poses
         elif mode == "original":
             render_func = interpolate_view_original
+        elif mode == "stable_view":
+            render_func = render_stable_camera_view
         else:
             render_func = interpolate_all
 
         if not skip_train:
-            render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "train", scene.loaded_iter,
-                        scene.getTrainCameras(), gaussians, pipeline,
-                        background, deform)
+            if mode == "stable_view":
+                render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "train", scene.loaded_iter,
+                            scene.getTrainSpatialCameras(), gaussians, pipeline,
+                            background, deform)
+            else:
+                render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "train", scene.loaded_iter,
+                            scene.getTrainCameras(), gaussians, pipeline,
+                            background, deform)
 
         if not skip_test:
-            render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "test", scene.loaded_iter,
-                        scene.getTestCameras(), gaussians, pipeline,
-                        background, deform)
+            if mode == "stable_view":
+                render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "test", scene.loaded_iter,
+                            scene.getTestSpatialCameras(), gaussians, pipeline,
+                            background, deform)
+            else:
+                render_func(dataset.model_path, dataset.load2gpu_on_the_fly, dataset.is_6dof, "test", scene.loaded_iter,
+                            scene.getTestCameras(), gaussians, pipeline,
+                            background, deform)
 
 
 if __name__ == "__main__":
@@ -340,7 +396,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--mode", default='render', choices=['render', 'time', 'view', 'all', 'pose', 'original'])
+    parser.add_argument("--mode", default='render', choices=['render', 'time', 'view', 'all', 'pose', 'original', 'stable_view'])
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
